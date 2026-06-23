@@ -1,0 +1,138 @@
+*crit.txt*  Review crit sessions inside neovim                       *crit.nvim*
+
+==============================================================================
+CONTENTS                                                        *crit-contents*
+
+  1. Overview ........................................... |crit-overview|
+  2. Requirements ....................................... |crit-requirements|
+  3. Setup .............................................. |crit-setup|
+  4. Commands ........................................... |crit-commands|
+  5. Workflow ........................................... |crit-workflow|
+  6. Configuration ...................................... |crit-config|
+
+==============================================================================
+1. OVERVIEW                                                     *crit-overview*
+
+`crit.nvim` lets you review a `crit` session from inside neovim. The agent
+runs `crit session start`, gives you the id, and you drive the entire review
+loop (`:CritAttach`, `:CritComment`, `:CritEdit`, `:CritDelete`, `:CritList`,
+`:CritSubmit`) without ever leaving the editor.
+
+==============================================================================
+2. REQUIREMENTS                                              *crit-requirements*
+
+  - neovim 0.10+
+  - The `crit` CLI on `$PATH` (https://github.com/ammar-ahmed22/crit)
+  - sindrets/diffview.nvim (https://github.com/sindrets/diffview.nvim)
+
+Run `:CritDoctor` to verify both are wired up.
+
+==============================================================================
+3. SETUP                                                          *crit-setup*
+
+Packer: >
+    use {
+      "ammar-ahmed22/crit.nvim",
+      requires = { "sindrets/diffview.nvim" },
+      config = function() require("crit").setup({}) end,
+    }
+<
+
+Lazy: >
+    {
+      "ammar-ahmed22/crit.nvim",
+      dependencies = { "sindrets/diffview.nvim" },
+      opts = {},
+    }
+<
+
+==============================================================================
+4. COMMANDS                                                    *crit-commands*
+
+                                                                 *:CritAttach*
+:CritAttach {id}
+    Load session {id}. `cd`s into its repo, opens Diffview on the session's
+    scope (worktree / staged / `base...HEAD`), and paints existing comments
+    as signs + virtual text. Warns if HEAD has moved since the snapshot.
+
+                                                                 *:CritDetach*
+:CritDetach
+    Drop the in-memory state and clear signs. Does NOT close Diffview.
+
+                                                                *:CritComment*
+:[range]CritComment
+    Add a comment on the current line or the supplied range. The current
+    buffer must be a Diffview file pane.
+
+                                                                   *:CritEdit*
+:CritEdit
+    Edit the comment under the cursor. If multiple comments overlap the line,
+    pick one via |vim.ui.select|.
+
+                                                                 *:CritDelete*
+:CritDelete
+    Delete the comment under the cursor (with confirmation).
+
+                                                                   *:CritList*
+:CritList
+    Populate the quickfix list with every draft comment. <CR> jumps to that
+    comment in the right Diffview pane.
+
+                                                                 *:CritSubmit*
+:CritSubmit
+    Open the submit window. `a`/`r`/`m` chooses the verdict; type the
+    summary; <C-s> submits. Detaches on success.
+
+                                                                   *:CritShow*
+:CritShow
+    Echo the attached session's id, status, scope, and instructions.
+
+                                                                   *:CritOpen*
+:CritOpen
+    Open the upstream `crit open` Bubble Tea TUI in a terminal split.
+
+                                                                 *:CritDoctor*
+:CritDoctor
+    Print dependency status (binary, plugin, version).
+
+                                                                    *:CritLog*
+:CritLog
+    Open the crit.nvim call log buffer.
+
+------------------------------------------------------------------------------
+COMMENT EDITOR KEYS                                       *crit-comment-keys*
+
+    <C-s>    save and close
+    <C-t>    cycle kind: comment -> question -> nit -> blocking
+    q / Esc  cancel
+
+SUBMIT WINDOW KEYS                                          *crit-submit-keys*
+
+    a / r / m   verdict: approve / request_changes / comment
+    <C-s>       submit
+    q / Esc     cancel
+
+==============================================================================
+5. WORKFLOW                                                    *crit-workflow*
+
+  1. Agent finishes a change set and runs `crit session start`.
+  2. Agent prints the id, e.g. `crit-7f3a2c`.
+  3. In nvim: >
+       :CritAttach crit-7f3a2c
+<     Diffview opens.
+  4. Select lines, `:'<,'>CritComment`, type the body, `<C-s>`.
+  5. `:CritEdit` / `:CritDelete` as needed.
+  6. `:CritSubmit`, pick verdict, `<C-s>`.
+  7. Agent's `crit session wait` returns the review.json and proceeds.
+
+==============================================================================
+6. CONFIGURATION                                                *crit-config*
+
+See README.md for the full default table. The most common overrides:
+
+  bin                  path to the crit binary (default `"crit"`)
+  sessions_dir         override --sessions-dir
+  warn_on_head_drift   whether :CritAttach warns when HEAD moved (default
+                       `true`)
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
