@@ -33,6 +33,30 @@ function M.current_view()
   return lib.get_current_view()
 end
 
+-- iter_files returns a plain array of FileEntry objects for `view`.
+--
+-- diffview stores `view.files` as a FileDict: a table whose entries live in
+-- `working`/`staged`/`conflicting` subtables and are surfaced through a custom
+-- `__index` metamethod, NOT as raw integer keys. LuaJIT's `ipairs` reads raw
+-- keys and ignores `__index`, so `ipairs(view.files)` yields nothing. We use
+-- the FileDict:iter() iterator when present and fall back to ipairs for any
+-- diffview version that does expose a plain list.
+local function iter_files(view)
+  local files = view and view.files
+  if not files then return {} end
+  local out = {}
+  if type(files.iter) == "function" then
+    for _, entry in files:iter() do
+      out[#out + 1] = entry
+    end
+  else
+    for _, entry in ipairs(files) do
+      out[#out + 1] = entry
+    end
+  end
+  return out
+end
+
 -- buffer_anchor inspects buffer `bufnr` (defaulting to the current buffer) and
 -- returns its (file, side) pair if it belongs to the active Diffview view, or
 -- nil if the buffer isn't a diffview file pane.
@@ -44,7 +68,7 @@ function M.buffer_anchor(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local view = M.current_view()
   if not view or not view.files then return nil end
-  for _, entry in ipairs(view.files) do
+  for _, entry in ipairs(iter_files(view)) do
     local left = entry.layout and entry.layout.a and entry.layout.a.file and entry.layout.a.file.bufnr
     local right = entry.layout and entry.layout.b and entry.layout.b.file and entry.layout.b.file.bufnr
     -- Fall back to common older field names if the modern layout isn't there.
@@ -71,7 +95,7 @@ function M.focus_anchor(file, side, line)
     util.warn("no active Diffview view")
     return false
   end
-  for _, entry in ipairs(view.files) do
+  for _, entry in ipairs(iter_files(view)) do
     local path = entry.path or (entry.absolute_path and vim.fn.fnamemodify(entry.absolute_path, ":."))
     if path == file then
       if view.set_file then
