@@ -70,7 +70,7 @@ default keybindings — wire up whatever you like in your own config.
 | `:CritEdit` | Edit the comment under the cursor. If multiple comments overlap the line, pick one via `vim.ui.select`. |
 | `:CritDelete` | Delete the comment under the cursor (with confirm). |
 | `:CritList` | Populate the quickfix list with every draft comment. `<CR>` jumps to a comment in the right Diffview pane. |
-| `:CritSubmit` | Open the submit window. Pick a verdict (`a`/`r`/`m`), type a summary, `<C-s>` to submit. Detaches on success. |
+| `:CritSubmit` | Open the submit window. Pick a verdict (`a`/`r`/`m`), type a summary, then `:wq` (or `<C-s>`) to submit. Detaches on success. |
 | `:CritShow` | Echo session metadata (id, status, scope, instructions). |
 | `:CritOpen` | Open the upstream Bubble Tea TUI for the attached session in a terminal split. |
 | `:CritDoctor` | Print dependency status. |
@@ -78,19 +78,25 @@ default keybindings — wire up whatever you like in your own config.
 
 ### Comment editor
 
-| Key | Action |
+The editor behaves like a normal file buffer:
+
+| Command / Key | Action |
 |---|---|
-| `<C-s>` | save and close |
+| `:w` | stage the body (window stays open) |
+| `:wq` / `:x` / `ZZ` | save and submit, then close |
+| `<C-s>` | save and submit immediately |
 | `<C-t>` | cycle kind: `comment` → `question` → `nit` → `blocking` |
-| `q` / `<Esc>` | cancel |
+| `:q` / `q` / `<Esc>` | quit; submits if you ran `:w` first, otherwise cancels |
 
 ### Submit window
 
-| Key | Action |
+| Command / Key | Action |
 |---|---|
 | `a` / `r` / `m` | verdict: approve / request_changes / comment |
-| `<C-s>` | submit |
-| `q` / `<Esc>` | cancel |
+| `:w` | stage the summary (window stays open) |
+| `:wq` / `:x` / `ZZ` | save and submit, then close |
+| `<C-s>` | save and submit immediately |
+| `:q` / `q` / `<Esc>` | quit; submits if you ran `:w` first, otherwise cancels |
 
 ## Configuration
 
@@ -125,7 +131,7 @@ require("crit").setup({
 3. In nvim: `:CritAttach crit-7f3a2c`. Diffview opens.
 4. Walk the diff. `V`+`:CritComment` to comment on a range. `:CritEdit` /
    `:CritDelete` as needed.
-5. `:CritSubmit`. Pick verdict, type summary, `<C-s>`.
+5. `:CritSubmit`. Pick verdict, type summary, `:wq`.
 6. Agent's `crit session wait` returns the `review.json` and proceeds.
 
 ## Status

@@ -34,10 +34,13 @@ end
 function M.open(spec)
   local verdict = "comment"
   local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
+  -- "acwrite" lets us intercept ":w" via BufWriteCmd so the buffer behaves like
+  -- a real file: ":w" stages the summary, ":q"/":wq" submit it (see below).
+  vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "markdown"
+  pcall(vim.api.nvim_buf_set_name, buf, "crit://submit/" .. buf)
 
   local lines = {}
   table.insert(lines, "# Submit review for " .. spec.session_id)
@@ -58,6 +61,7 @@ function M.open(spec)
   local summary_start = #lines + 1
   table.insert(lines, "")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modified = false
 
   local rect = center_rect()
   local win = vim.api.nvim_open_win(buf, true, rect)
@@ -82,16 +86,60 @@ function M.open(spec)
     end
   end
 
+  -- staged holds the summary captured by the most recent ":w". On close via
+  -- ":q"/":wq", a non-nil staged value means "submit the review", while nil
+  -- means "nothing was written, just cancel". finished keeps exits idempotent.
+  local staged = nil
+  local finished = false
+
+  -- finish runs the terminal action exactly once, deferred so it is safe to
+  -- call from inside QuitPre (window mid-teardown).
+  local function finish(action, summary)
+    if finished then return end
+    finished = true
+    vim.schedule(function()
+      if action == "submit" then
+        spec.on_submit(verdict, summary)
+      elseif spec.on_cancel then
+        spec.on_cancel()
+      end
+    end)
+  end
+
   local function submit()
     local summary = read_summary()
     close()
-    spec.on_submit(verdict, summary)
+    finish("submit", summary)
   end
 
   local function cancel()
     close()
-    if spec.on_cancel then spec.on_cancel() end
+    finish("cancel")
   end
+
+  -- ":w" stages the current summary without closing the window.
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      staged = read_summary()
+      vim.bo[buf].modified = false
+    end,
+  })
+
+  -- ":q"/":wq"/":x"/ZZ route through QuitPre. Clearing `modified` lets the quit
+  -- proceed past the unsaved scratch buffer; a staged summary means submit,
+  -- otherwise cancel.
+  vim.api.nvim_create_autocmd("QuitPre", {
+    buffer = buf,
+    callback = function()
+      vim.bo[buf].modified = false
+      if staged ~= nil then
+        finish("submit", staged)
+      else
+        finish("cancel")
+      end
+    end,
+  })
 
   local function refresh_verdict_line()
     vim.api.nvim_buf_set_lines(buf, 1, 2, false, {

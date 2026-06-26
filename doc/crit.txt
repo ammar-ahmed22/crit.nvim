@@ -81,7 +81,7 @@ Lazy: >
                                                                  *:CritSubmit*
 :CritSubmit
     Open the submit window. `a`/`r`/`m` chooses the verdict; type the
-    summary; <C-s> submits. Detaches on success.
+    summary; `:wq` (or <C-s>) submits. Detaches on success.
 
                                                                    *:CritShow*
 :CritShow
@@ -102,15 +102,21 @@ Lazy: >
 ------------------------------------------------------------------------------
 COMMENT EDITOR KEYS                                       *crit-comment-keys*
 
-    <C-s>    save and close
-    <C-t>    cycle kind: comment -> question -> nit -> blocking
-    q / Esc  cancel
+  The editor behaves like a normal file buffer.
+
+    :w              stage the body (window stays open)
+    :wq / :x / ZZ   save and submit, then close
+    <C-s>           save and submit immediately
+    <C-t>           cycle kind: comment -> question -> nit -> blocking
+    :q / q / Esc    quit; submits if :w was run first, else cancels
 
 SUBMIT WINDOW KEYS                                          *crit-submit-keys*
 
-    a / r / m   verdict: approve / request_changes / comment
-    <C-s>       submit
-    q / Esc     cancel
+    a / r / m       verdict: approve / request_changes / comment
+    :w              stage the summary (window stays open)
+    :wq / :x / ZZ   save and submit, then close
+    <C-s>           save and submit immediately
+    :q / q / Esc    quit; submits if :w was run first, else cancels
 
 ==============================================================================
 5. WORKFLOW                                                    *crit-workflow*
@@ -120,9 +126,9 @@ SUBMIT WINDOW KEYS                                          *crit-submit-keys*
   3. In nvim: >
        :CritAttach crit-7f3a2c
 <     Diffview opens.
-  4. Select lines, `:'<,'>CritComment`, type the body, `<C-s>`.
+  4. Select lines, `:'<,'>CritComment`, type the body, `:wq`.
   5. `:CritEdit` / `:CritDelete` as needed.
-  6. `:CritSubmit`, pick verdict, `<C-s>`.
+  6. `:CritSubmit`, pick verdict, `:wq`.
   7. Agent's `crit session wait` returns the review.json and proceeds.
 
 ==============================================================================

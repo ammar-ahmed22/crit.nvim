@@ -44,10 +44,15 @@ function M.open(spec)
   local kind = spec.initial_kind or "comment"
 
   local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
+  -- "acwrite" lets us intercept ":w" via BufWriteCmd so the buffer behaves like
+  -- a real file: ":w" stages the body, ":q"/":wq" submit it (see below).
+  vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "markdown"
+  -- acwrite buffers need a name for ":w" to target. The scheme keeps it unique
+  -- and obviously synthetic.
+  pcall(vim.api.nvim_buf_set_name, buf, "crit://comment/" .. buf)
 
   local lines = {}
   table.insert(lines, "# " .. (spec.title or "Comment"))
@@ -64,6 +69,7 @@ function M.open(spec)
     table.insert(lines, line)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modified = false
 
   local rect = center_rect()
   local win = vim.api.nvim_open_win(buf, true, rect)
@@ -88,16 +94,62 @@ function M.open(spec)
     end
   end
 
+  -- staged holds the body captured by the most recent ":w". When the editor is
+  -- closed via ":q"/":wq", a non-nil staged value means "submit", while nil
+  -- means "nothing was written, just cancel". finished makes every exit path
+  -- idempotent so we never submit and cancel (or submit twice).
+  local staged = nil
+  local finished = false
+
+  -- finish runs the terminal action exactly once. It is deferred so it can be
+  -- called safely from inside QuitPre (where the window is mid-teardown).
+  local function finish(action, body)
+    if finished then return end
+    finished = true
+    vim.schedule(function()
+      if action == "submit" then
+        spec.on_submit(body, kind)
+      elseif spec.on_cancel then
+        spec.on_cancel()
+      end
+    end)
+  end
+
+  -- submit closes the float immediately (the <C-s> path).
   local function submit()
     local body = read_body()
     close()
-    spec.on_submit(body, kind)
+    finish("submit", body)
   end
 
   local function cancel()
     close()
-    if spec.on_cancel then spec.on_cancel() end
+    finish("cancel")
   end
+
+  -- ":w" stages the current body without closing the window.
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      staged = read_body()
+      vim.bo[buf].modified = false
+    end,
+  })
+
+  -- ":q"/":wq"/":x"/ZZ all route through QuitPre. Clearing `modified` lets the
+  -- quit proceed (otherwise nvim aborts with E37 on the unsaved scratch buffer).
+  -- If anything was staged via ":w", submit it; otherwise treat it as a cancel.
+  vim.api.nvim_create_autocmd("QuitPre", {
+    buffer = buf,
+    callback = function()
+      vim.bo[buf].modified = false
+      if staged ~= nil then
+        finish("submit", staged)
+      else
+        finish("cancel")
+      end
+    end,
+  })
 
   local function refresh_kind_line()
     vim.api.nvim_buf_set_lines(buf, 2, 3, false, { "kind:   " .. kind })
