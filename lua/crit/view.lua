@@ -36,16 +36,25 @@ function M.has_mini()
   return pcall(require, "mini.diff")
 end
 
--- ensure_mini_hl defines mini.diff's overlay/sign highlight groups.
+-- ensure_mini_ready makes sure mini.diff is actually able to DRAW.
 --
--- mini.diff only creates these groups inside MiniDiff.setup(); crit drives
--- mini.diff via enable()/set_ref_text() WITHOUT calling setup() (so as not to
--- clobber the user's own mini.diff config), which means without this the
--- overlay would render with undefined groups and show no green/red. We mirror
--- mini.diff's own defaults with `default = true` so a user's explicit colors
--- (or their own setup() call) always win, and re-apply on ColorScheme.
-local mini_hl_group = vim.api.nvim_create_augroup("CritViewMiniHl", { clear = true })
-local function ensure_mini_hl()
+-- The visualization (signs + overlay) is performed by a global decoration
+-- provider that mini.diff registers ONLY inside MiniDiff.setup() (via
+-- H.apply_config). It also creates its highlight groups and the auto-enable
+-- autocmds there. If the user never called setup(), enable()/set_ref_text()
+-- compute hunks but nothing is ever drawn — no green/red. So crit ensures
+-- setup() has run exactly once.
+--
+-- We detect a prior setup() by the presence of the global `MiniDiff` table
+-- (setup() does `_G.MiniDiff = MiniDiff`). If the user already set it up we do
+-- NOT call setup() again (that would reset their config/mappings); we only
+-- top up the highlight groups defensively. If they did not, we call setup()
+-- once and then clear mini.diff's own `MiniDiff` autocommand group, which
+-- removes its global `BufEnter` auto-enable so it does not start drawing git
+-- signs in all of the user's normal buffers. The decoration provider that
+-- setup() registers is global (not an autocmd), so clearing the group leaves
+-- drawing intact; crit enables only its own diff buffers explicitly.
+local function define_mini_hl()
   local core = vim.fn.has("nvim-0.10") == 1
   local function hi(name, val)
     val.default = true
@@ -60,12 +69,32 @@ local function ensure_mini_hl()
   hi("MiniDiffOverContext",   { link = "DiffChange" })
   hi("MiniDiffOverContextBuf", {})
   hi("MiniDiffOverDelete",    { link = "DiffDelete" })
-  vim.api.nvim_clear_autocmds({ group = mini_hl_group })
+end
+
+local mini_ready = false
+local function ensure_mini_ready()
+  if mini_ready then
+    define_mini_hl()
+    return
+  end
+  local mini = require("mini.diff")
+  if _G.MiniDiff == nil then
+    -- mini.diff has not been set up. setup() registers the (global) decoration
+    -- provider that actually draws signs + overlay; without it nothing renders.
+    pcall(mini.setup, {})
+    -- Remove mini.diff's global auto-enable autocmds so it does not decorate
+    -- the user's other buffers; crit enables its own diff buffers explicitly.
+    pcall(vim.api.nvim_create_augroup, "MiniDiff", { clear = true })
+  end
+  define_mini_hl()
+  -- Keep crit's highlight links alive across colorscheme changes.
+  pcall(vim.api.nvim_create_augroup, "CritViewMiniHl", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", {
-    group = mini_hl_group,
-    callback = ensure_mini_hl,
+    group = "CritViewMiniHl",
+    callback = define_mini_hl,
     desc = "Re-apply crit/mini.diff overlay highlights",
   })
+  mini_ready = true
 end
 
 function M.is_open()
@@ -362,7 +391,7 @@ function M.open(meta)
     util.error("echasnovski/mini.diff is required for the inline diff view")
     return false
   end
-  ensure_mini_hl()
+  ensure_mini_ready()
   if M.is_open() then M.close() end
 
   state = {
