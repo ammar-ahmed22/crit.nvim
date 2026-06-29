@@ -54,27 +54,40 @@ end
 -- signs in all of the user's normal buffers. The decoration provider that
 -- setup() registers is global (not an autocmd), so clearing the group leaves
 -- drawing intact; crit enables only its own diff buffers explicitly.
-local function define_mini_hl()
+-- define_mini_hl sets crit's preferred links for mini.diff's overlay/sign
+-- groups. When `force` is true the links are applied unconditionally; mini.diff
+-- defines these same groups in its own setup() (with `default = true`), so crit
+-- MUST force to win — otherwise `nvim_set_hl(..., { default = true })` is a
+-- no-op against the already-defined group and crit's choices are ignored.
+-- `force` is false only when the user set mini.diff up themselves, so their own
+-- overlay colors are preserved.
+local function define_mini_hl(force)
   local core = vim.fn.has("nvim-0.10") == 1
   local function hi(name, val)
-    val.default = true
+    val.default = not force
     vim.api.nvim_set_hl(0, name, val)
   end
   hi("MiniDiffSignAdd",       { link = core and "Added" or "diffAdded" })
   hi("MiniDiffSignChange",    { link = core and "Changed" or "diffChanged" })
   hi("MiniDiffSignDelete",    { link = core and "Removed" or "diffRemoved" })
   hi("MiniDiffOverAdd",       { link = "DiffAdd" })
-  hi("MiniDiffOverChange",    { link = "DiffText" })
-  hi("MiniDiffOverChangeBuf", { link = "MiniDiffOverChange" })
+  -- MiniDiffOverChange highlights the OLD (reference) text of a changed line,
+  -- shown as virtual text above the new line. Treat it as removed -> red,
+  -- rather than mini.diff's default DiffText (often blue). MiniDiffOverChangeBuf
+  -- is the NEW changed text and keeps its own (non-red) link so it does not
+  -- inherit the deletion color.
+  hi("MiniDiffOverChange",    { link = "DiffDelete" })
+  hi("MiniDiffOverChangeBuf", { link = "DiffText" })
   hi("MiniDiffOverContext",   { link = "DiffChange" })
   hi("MiniDiffOverContextBuf", {})
   hi("MiniDiffOverDelete",    { link = "DiffDelete" })
 end
 
 local mini_ready = false
+local mini_force_hl = false
 local function ensure_mini_ready()
   if mini_ready then
-    define_mini_hl()
+    define_mini_hl(mini_force_hl)
     return
   end
   local mini = require("mini.diff")
@@ -85,13 +98,16 @@ local function ensure_mini_ready()
     -- Remove mini.diff's global auto-enable autocmds so it does not decorate
     -- the user's other buffers; crit enables its own diff buffers explicitly.
     pcall(vim.api.nvim_create_augroup, "MiniDiff", { clear = true })
+    -- crit owns the overlay look here, so force its links (mini.diff already
+    -- defined the groups in setup(), making `default` links a no-op).
+    mini_force_hl = true
   end
-  define_mini_hl()
+  define_mini_hl(mini_force_hl)
   -- Keep crit's highlight links alive across colorscheme changes.
   pcall(vim.api.nvim_create_augroup, "CritViewMiniHl", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = "CritViewMiniHl",
-    callback = define_mini_hl,
+    callback = function() define_mini_hl(mini_force_hl) end,
     desc = "Re-apply crit/mini.diff overlay highlights",
   })
   mini_ready = true
