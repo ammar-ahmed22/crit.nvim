@@ -36,6 +36,38 @@ function M.has_mini()
   return pcall(require, "mini.diff")
 end
 
+-- ensure_mini_hl defines mini.diff's overlay/sign highlight groups.
+--
+-- mini.diff only creates these groups inside MiniDiff.setup(); crit drives
+-- mini.diff via enable()/set_ref_text() WITHOUT calling setup() (so as not to
+-- clobber the user's own mini.diff config), which means without this the
+-- overlay would render with undefined groups and show no green/red. We mirror
+-- mini.diff's own defaults with `default = true` so a user's explicit colors
+-- (or their own setup() call) always win, and re-apply on ColorScheme.
+local mini_hl_group = vim.api.nvim_create_augroup("CritViewMiniHl", { clear = true })
+local function ensure_mini_hl()
+  local core = vim.fn.has("nvim-0.10") == 1
+  local function hi(name, val)
+    val.default = true
+    vim.api.nvim_set_hl(0, name, val)
+  end
+  hi("MiniDiffSignAdd",       { link = core and "Added" or "diffAdded" })
+  hi("MiniDiffSignChange",    { link = core and "Changed" or "diffChanged" })
+  hi("MiniDiffSignDelete",    { link = core and "Removed" or "diffRemoved" })
+  hi("MiniDiffOverAdd",       { link = "DiffAdd" })
+  hi("MiniDiffOverChange",    { link = "DiffText" })
+  hi("MiniDiffOverChangeBuf", { link = "MiniDiffOverChange" })
+  hi("MiniDiffOverContext",   { link = "DiffChange" })
+  hi("MiniDiffOverContextBuf", {})
+  hi("MiniDiffOverDelete",    { link = "DiffDelete" })
+  vim.api.nvim_clear_autocmds({ group = mini_hl_group })
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = mini_hl_group,
+    callback = ensure_mini_hl,
+    desc = "Re-apply crit/mini.diff overlay highlights",
+  })
+end
+
 function M.is_open()
   return state ~= nil
     and state.tab ~= nil
@@ -208,16 +240,84 @@ local function status_marker(status)
   return ({ A = "A", D = "D", R = "R", C = "C", M = "M" })[status] or "M"
 end
 
--- refresh_picker redraws the file list with a live draft-comment count.
+-- build_tree turns the flat { {path, status} } file list into a nested tree of
+-- directory nodes and file leaves, then collapses single-child directory chains
+-- (so e.g. `a/b/c/x.go` renders as one `a/b/c/` node rather than three nested
+-- levels) — the same readability trick diffview's file panel uses.
+--
+-- Node shape:
+--   dir  = { name, dir = true, children = { <node>... } }
+--   file = { name, file = <the {path,status} entry> }
+local function build_tree(files)
+  local root = { name = "", dir = true, children = {}, _index = {} }
+  for _, f in ipairs(files) do
+    local node = root
+    local parts = vim.split(f.path, "/", { plain = true })
+    for i, part in ipairs(parts) do
+      if i == #parts then
+        node.children[#node.children + 1] = { name = part, file = f }
+      else
+        local child = node._index[part]
+        if not child then
+          child = { name = part, dir = true, children = {}, _index = {} }
+          node._index[part] = child
+          node.children[#node.children + 1] = child
+        end
+        node = child
+      end
+    end
+  end
+
+  -- Collapse chains: a dir with exactly one child that is itself a dir merges
+  -- its name with the child's (path-joined).
+  local function collapse(node)
+    if node.dir then
+      while #node.children == 1 and node.children[1].dir do
+        local only = node.children[1]
+        node.name = (node.name == "" and only.name) or (node.name .. "/" .. only.name)
+        node.children = only.children
+      end
+      for _, c in ipairs(node.children) do collapse(c) end
+      -- Sort: directories first, then files, each alphabetical.
+      table.sort(node.children, function(a, b)
+        local ad, bd = a.dir and 1 or 0, b.dir and 1 or 0
+        if ad ~= bd then return ad > bd end
+        return a.name < b.name
+      end)
+    end
+  end
+  collapse(root)
+  return root
+end
+
+-- refresh_picker redraws the file tree with a live draft-comment count, and
+-- rebuilds state.picker_rows so <CR> maps a rendered row back to its file.
 function M.refresh_picker()
   if not M.is_open() then return end
   local session = require("crit.session")
+  local tree = build_tree(state.files)
   local lines = {}
-  for _, f in ipairs(state.files) do
-    local n = #session.comments_for(f.path, nil)
-    local count = n > 0 and string.format("  (%d)", n) or ""
-    lines[#lines + 1] = string.format("%s %s%s", status_marker(f.status), f.path, count)
+  local rows = {} -- rows[lnum] = file entry ({path,status}) or nil for dir lines
+
+  local function render(node, depth)
+    for _, child in ipairs(node.children) do
+      local indent = string.rep("  ", depth)
+      if child.dir then
+        lines[#lines + 1] = string.format("%s %s/", indent, child.name)
+        rows[#lines] = nil
+        render(child, depth + 1)
+      else
+        local f = child.file
+        local n = #session.comments_for(f.path, nil)
+        local count = n > 0 and string.format("  (%d)", n) or ""
+        lines[#lines + 1] = string.format("%s%s %s%s", indent, status_marker(f.status), child.name, count)
+        rows[#lines] = f
+      end
+    end
   end
+  render(tree, 0)
+
+  state.picker_rows = rows
   if #lines == 0 then lines = { "(no changed files)" } end
   vim.bo[state.picker_buf].modifiable = true
   vim.api.nvim_buf_set_lines(state.picker_buf, 0, -1, false, lines)
@@ -262,6 +362,7 @@ function M.open(meta)
     util.error("echasnovski/mini.diff is required for the inline diff view")
     return false
   end
+  ensure_mini_hl()
   if M.is_open() then M.close() end
 
   state = {
@@ -306,10 +407,10 @@ function M.open(meta)
   -- Width after the split, else the vsplit halves the picker.
   vim.api.nvim_win_set_width(state.picker_win, config.opts.view.picker_width)
 
-  -- <CR> in the picker opens the file under the cursor.
+  -- <CR> in the picker opens the file under the cursor (directory rows no-op).
   vim.keymap.set("n", "<CR>", function()
     local row = vim.api.nvim_win_get_cursor(state.picker_win)[1]
-    local f = state.files[row]
+    local f = state.picker_rows and state.picker_rows[row]
     if f then show_file(f.path) end
   end, { buffer = state.picker_buf, nowait = true, silent = true })
 
@@ -436,10 +537,13 @@ function M.focus_anchor(path, side, line)
   end
   pcall(vim.api.nvim_win_set_cursor, state.diff_win, { math.max(row, 1), 0 })
   -- Keep the picker highlight in sync.
-  for i, f in ipairs(state.files) do
-    if f.path == path then
-      pcall(vim.api.nvim_win_set_cursor, state.picker_win, { i, 0 })
-      break
+  -- Move the picker cursor to the tree row showing this file.
+  if state.picker_rows then
+    for row, f in pairs(state.picker_rows) do
+      if f and f.path == path then
+        pcall(vim.api.nvim_win_set_cursor, state.picker_win, { row, 0 })
+        break
+      end
     end
   end
   return true

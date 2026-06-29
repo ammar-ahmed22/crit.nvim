@@ -140,16 +140,18 @@ inline-diff buffer on the right:
 
 ```
 ┌────────────────────┬──────────────────────────────────────┐
-│ M app.go      (2)   │  5   // Greet prints a friendly...    │
-│ A new.go            │  6   func Greet(name string) {        │
-│ D del.txt           │  7 ~ fmt.Println("hi there " + name)  │  ← change
-│ M big.txt           │  8 + fmt.Println("welcome")           │  ← add
-│                     │  9   }                                │
+│ src/                │  5   // Greet prints a friendly...    │
+│   M greet.go   (2)  │  6   func Greet(name string) {        │
+│ pkg/                │  7 ~ fmt.Println("hi there " + name)  │  ← change
+│   A helper.go       │  8 + fmt.Println("welcome")           │  ← add
+│ D del.txt           │  9   }                                │
 └────────────────────┴──────────────────────────────────────┘
 ```
 
-- The picker shows each changed file with a status marker (`M`/`A`/`D`/`R`) and
-  a live count of draft comments. `<CR>` opens the file in the diff window.
+- The picker shows changed files as a **directory tree** (single-child
+  directory chains are collapsed), each file with a status marker
+  (`M`/`A`/`D`/`R`) and a live count of draft comments. `<CR>` on a file row
+  opens it in the diff window.
 - The diff is drawn by `mini.diff`'s overlay over the **real file buffer**, so
   you keep full per-language **syntax highlighting**. Unchanged regions away
   from a hunk are **folded** (configurable via `view.fold_unchanged` /
