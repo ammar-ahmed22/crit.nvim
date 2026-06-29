@@ -22,17 +22,20 @@ crit session start --title "manual e2e"
 #    crit session wait crit-abc123
 ```
 
-In nvim (with `crit.nvim` and `diffview.nvim` installed):
+In nvim (with `crit.nvim` and `echasnovski/mini.diff` installed):
 
-1. `:CritDoctor` — expect both lines green.
-2. `:CritAttach crit-abc123` — Diffview should open showing foo.txt's diff.
-3. Cursor on the `+two modified` line. `:CritComment`. Type a body. `<C-s>`.
-   A sign and end-of-line virt-text should appear on that line.
+1. `:CritDoctor` — expect the crit binary and mini.diff lines green.
+2. `:CritAttach crit-abc123` — a new tab opens: file picker on the left,
+   foo.txt's inline diff (green adds, red deletes) on the right with real
+   syntax highlighting. Unchanged regions far from the change are folded.
+3. Cursor on the changed `two modified` line. `:CritComment`. Type a body.
+   `<C-s>`. A sign and end-of-line virt-text should appear on that line.
 4. Visual-select two lines (`V` + `j`). `:'<,'>CritComment`. Type a body.
    `<C-t>` to toggle the kind to `blocking`. `<C-s>`.
 5. On the first comment's line: `:CritEdit`. Change the body. `<C-s>`. The
    virt-text should update.
-6. `:CritList` — quickfix opens. `<CR>` on a row jumps to the comment.
+6. `:CritList` — quickfix opens. `<CR>` on a row jumps to the comment in the
+   inline diff (switching files in the picker as needed).
 7. `:CritDelete` on the second comment's line. Confirm with `y`. The sign
    should disappear.
 8. `:CritSubmit`. Press `r`. Type a summary. `<C-s>`.
@@ -43,8 +46,10 @@ Edge cases worth checking:
 
 - Commit a change after step 3 (`git add -A && git commit -m x`). On
   reattach, the HEAD-drift warning should fire.
-- Comment on a removed-only line in the left pane: the resulting comment
-  should have `side: "old"` and a `-` snippet.
+- A new file (`A` in the picker) should render as all-green; a deleted file
+  (`D`) should render (its buffer is the old content, shown as removed).
+- Multiple changed files: `<CR>` a different file in the picker; comments on a
+  previously-opened file persist when you return to it.
 - Out-of-range anchor: not really exposable from the UI, but the underlying
   `crit session comment add` rejects it; check the `:CritLog` after a
   malformed manual call.

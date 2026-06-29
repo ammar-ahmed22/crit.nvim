@@ -16,6 +16,11 @@ M.defaults = {
     max_chars = 60,
     hl = "Comment",
   },
+  view = {
+    picker_width = 40,      -- columns for the file-picker sidebar
+    fold_unchanged = true,  -- fold runs of unchanged lines away from hunks
+    context = 3,            -- lines of context kept around each hunk when folding
+  },
   warn_on_head_drift = true,
 }
 

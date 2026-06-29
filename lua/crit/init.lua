@@ -5,7 +5,7 @@ local config = require("crit.config")
 local util = require("crit.util")
 local cli = require("crit.cli")
 local session = require("crit.session")
-local diffview = require("crit.diffview")
+local view = require("crit.view")
 local signs = require("crit.ui.signs")
 local comment_ui = require("crit.ui.comment")
 local submit_ui = require("crit.ui.submit")
@@ -22,8 +22,8 @@ local function check_deps()
     util.error(("crit binary %q not on $PATH"):format(config.opts.bin))
     return false
   end
-  if not util.has_module("diffview") then
-    util.error("sindrets/diffview.nvim is required")
+  if not util.has_module("mini.diff") then
+    util.error("echasnovski/mini.diff is required")
     return false
   end
   return true
@@ -62,7 +62,7 @@ function M.attach(id)
     end
   end
 
-  if not diffview.open(meta.scope, meta.base_ref) then
+  if not view.open(meta) then
     return
   end
 
@@ -78,6 +78,7 @@ end
 
 function M.detach()
   signs.clear()
+  view.close()
   session.detach()
   util.info("detached")
 end
@@ -86,27 +87,31 @@ end
 
 -- resolve_anchor_at_cursor inspects the current window/buffer and returns the
 -- comment-anchor coordinates for the cursor or the last visual selection.
+--
+-- The inline view shows the new side of the file, so a buffer line number is
+-- the new-side line a comment anchors to; view.anchor_for_range maps the
+-- selected rows to (file, side, start, end).
 local function resolve_anchor_at_cursor(line1, line2)
-  local file, side = diffview.buffer_anchor()
-  if not file then
-    util.warn("cursor is not in a Diffview file pane")
+  local buf = vim.api.nvim_get_current_buf()
+  if not view.buf_path(buf) then
+    util.warn("cursor is not in a crit diff buffer")
     return nil
   end
-  local start_line, end_line
+  local r1, r2
   if line1 and line2 and line1 ~= line2 then
-    start_line, end_line = line1, line2
+    r1, r2 = line1, line2
   elseif line1 then
-    start_line, end_line = line1, line1
+    r1, r2 = line1, line1
   else
     local s, e = util.visual_range()
     if s then
-      start_line, end_line = s, e
+      r1, r2 = s, e
     else
       local row = vim.api.nvim_win_get_cursor(0)[1]
-      start_line, end_line = row, row
+      r1, r2 = row, row
     end
   end
-  return file, side, start_line, end_line
+  return view.anchor_for_range(buf, r1, r2)
 end
 
 local function refresh_draft_and_paint()
@@ -149,12 +154,13 @@ function M.comment_new(line1, line2)
 end
 
 local function pick_comment_under_cursor()
-  local file, side = diffview.buffer_anchor()
-  if not file then
-    util.warn("cursor is not in a Diffview file pane")
+  local buf = vim.api.nvim_get_current_buf()
+  if not view.buf_path(buf) then
+    util.warn("cursor is not in a crit diff buffer")
     return nil
   end
   local row = vim.api.nvim_win_get_cursor(0)[1]
+  local file, side = view.anchor_for_range(buf, row, row)
   local hits = session.comments_at(file, side, row)
   if #hits == 0 then
     util.warn("no comment on this line")
@@ -272,10 +278,10 @@ function M.doctor()
   else
     table.insert(lines, "  crit binary: NOT FOUND on $PATH (set config.bin or install via `go install`)")
   end
-  if util.has_module("diffview") then
-    table.insert(lines, "  diffview.nvim: ok")
+  if util.has_module("mini.diff") then
+    table.insert(lines, "  mini.diff: ok")
   else
-    table.insert(lines, "  diffview.nvim: NOT INSTALLED (required)")
+    table.insert(lines, "  mini.diff: NOT INSTALLED (required)")
   end
   for _, ln in ipairs(lines) do print(ln) end
 end

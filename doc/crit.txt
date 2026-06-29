@@ -23,9 +23,11 @@ loop (`:CritAttach`, `:CritComment`, `:CritEdit`, `:CritDelete`, `:CritList`,
 
   - neovim 0.10+
   - The `crit` CLI on `$PATH` (https://github.com/ammar-ahmed22/crit)
-  - sindrets/diffview.nvim (https://github.com/sindrets/diffview.nvim)
+  - echasnovski/mini.diff (https://github.com/echasnovski/mini.diff)
 
-Run `:CritDoctor` to verify both are wired up.
+Run `:CritDoctor` to verify both are wired up. mini.diff needs no separate
+configuration; crit.nvim drives it per buffer and does not touch your own
+`require('mini.diff').setup(...)`.
 
 ==============================================================================
 3. SETUP                                                          *crit-setup*
@@ -33,7 +35,7 @@ Run `:CritDoctor` to verify both are wired up.
 Packer: >
     use {
       "ammar-ahmed22/crit.nvim",
-      requires = { "sindrets/diffview.nvim" },
+      requires = { "echasnovski/mini.diff" },
       config = function() require("crit").setup({}) end,
     }
 <
@@ -41,7 +43,7 @@ Packer: >
 Lazy: >
     {
       "ammar-ahmed22/crit.nvim",
-      dependencies = { "sindrets/diffview.nvim" },
+      dependencies = { "echasnovski/mini.diff" },
       opts = {},
     }
 <
@@ -51,18 +53,19 @@ Lazy: >
 
                                                                  *:CritAttach*
 :CritAttach {id}
-    Load session {id}. `cd`s into its repo, opens Diffview on the session's
-    scope (worktree / staged / `base...HEAD`), and paints existing comments
-    as signs + virtual text. Warns if HEAD has moved since the snapshot.
+    Load session {id}. `cd`s into its repo, opens the inline diff view (file
+    picker + single-window unified diff) in a new tab on the session's scope
+    (worktree / staged / `base...HEAD`), and paints existing comments as signs
+    + virtual text. Warns if HEAD has moved since the snapshot.
 
                                                                  *:CritDetach*
 :CritDetach
-    Drop the in-memory state and clear signs. Does NOT close Diffview.
+    Drop the in-memory state, clear signs, and close the diff view tab.
 
                                                                 *:CritComment*
 :[range]CritComment
     Add a comment on the current line or the supplied range. The current
-    buffer must be a Diffview file pane.
+    buffer must be a crit diff buffer. Comments anchor to the new side.
 
                                                                    *:CritEdit*
 :CritEdit
@@ -76,7 +79,7 @@ Lazy: >
                                                                    *:CritList*
 :CritList
     Populate the quickfix list with every draft comment. <CR> jumps to that
-    comment in the right Diffview pane.
+    comment in the inline diff view.
 
                                                                  *:CritSubmit*
 :CritSubmit
@@ -93,7 +96,7 @@ Lazy: >
 
                                                                  *:CritDoctor*
 :CritDoctor
-    Print dependency status (binary, plugin, version).
+    Print dependency status (crit binary + version, mini.diff).
 
                                                                     *:CritLog*
 :CritLog
@@ -125,8 +128,9 @@ SUBMIT WINDOW KEYS                                          *crit-submit-keys*
   2. Agent prints the id, e.g. `crit-7f3a2c`.
   3. In nvim: >
        :CritAttach crit-7f3a2c
-<     Diffview opens.
-  4. Select lines, `:'<,'>CritComment`, type the body, `:wq`.
+<     The inline diff view opens in a new tab.
+  4. Pick a file in the picker (<CR>), select lines, `:'<,'>CritComment`,
+     type the body, `:wq`.
   5. `:CritEdit` / `:CritDelete` as needed.
   6. `:CritSubmit`, pick verdict, `:wq`.
   7. Agent's `crit session wait` returns the review.json and proceeds.
@@ -138,6 +142,9 @@ See README.md for the full default table. The most common overrides:
 
   bin                  path to the crit binary (default `"crit"`)
   sessions_dir         override --sessions-dir
+  view.picker_width    columns for the file-picker sidebar (default 40)
+  view.fold_unchanged  fold unchanged regions away from hunks (default true)
+  view.context         lines kept around each hunk when folding (default 3)
   warn_on_head_drift   whether :CritAttach warns when HEAD moved (default
                        `true`)
 

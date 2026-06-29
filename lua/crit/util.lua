@@ -70,6 +70,56 @@ function M.git_head(cwd)
   return out[1]
 end
 
+-- git_show returns the content of <rev>:<path> as a list of lines, or nil if
+-- the blob does not exist (e.g. an added file has no old-side blob). `rev` may
+-- be "HEAD", a sha, a base ref, or ":" for the index (staged) content.
+function M.git_show(cwd, rev, path)
+  local spec = rev .. ":" .. path
+  local out = vim.fn.systemlist({ "git", "-C", cwd, "show", spec })
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+  return out
+end
+
+-- git_merge_base returns the merge-base sha of `ref` and HEAD, mirroring the
+-- three-dot (`ref...HEAD`) semantics crit uses for scope=ref. Falls back to the
+-- ref itself if the merge-base cannot be computed.
+function M.git_merge_base(cwd, ref)
+  local out = vim.fn.systemlist({ "git", "-C", cwd, "merge-base", ref, "HEAD" })
+  if vim.v.shell_error ~= 0 or not out[1] or out[1] == "" then
+    return ref
+  end
+  return out[1]
+end
+
+-- git_name_status lists changed files for a diff range as { path, status }
+-- pairs, where status is the first git status letter (A/M/D/R...). `range` is
+-- the argument list passed to `git diff` (e.g. {"HEAD"}, {"--cached"},
+-- {"<base>...HEAD"}). Renames collapse to their new path with status "R".
+function M.git_name_status(cwd, range)
+  local cmd = { "git", "-C", cwd, "diff", "--name-status" }
+  for _, a in ipairs(range) do cmd[#cmd + 1] = a end
+  local out = vim.fn.systemlist(cmd)
+  if vim.v.shell_error ~= 0 then
+    return nil, table.concat(out, "\n")
+  end
+  local files = {}
+  for _, line in ipairs(out) do
+    -- "M\tpath", "A\tpath", "R100\told\tnew"
+    local status, rest = line:match("^(%a)%S*\t(.+)$")
+    if status then
+      local path = rest
+      if status == "R" or status == "C" then
+        -- old\tnew -> take the new path
+        path = rest:match("\t(.+)$") or rest
+      end
+      files[#files + 1] = { path = path, status = status }
+    end
+  end
+  return files
+end
+
 -- visual_range returns the inclusive [start_lnum, end_lnum] of the most recent
 -- visual selection (the `<` `>` marks). Returns nil when no selection exists.
 function M.visual_range()

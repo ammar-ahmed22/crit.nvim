@@ -2,7 +2,7 @@
 -- can :CritList -> <CR> to jump to any comment.
 
 local session = require("crit.session")
-local diffview = require("crit.diffview")
+local view = require("crit.view")
 local util = require("crit.util")
 
 local M = {}
@@ -26,15 +26,14 @@ function M.open()
   vim.fn.setqflist({}, "r", { title = "crit:" .. session.state.id, items = items })
   vim.cmd("copen")
 
-  -- When the user hits <CR>, focus the comment in the right Diffview pane
-  -- rather than letting :cnext drop them into an editing buffer.
+  -- When the user hits <CR>, focus the comment in the inline diff view rather
+  -- than letting :cnext drop them into an editing buffer.
   local qf_buf = vim.api.nvim_get_current_buf()
   vim.keymap.set("n", "<CR>", function()
     local row = vim.api.nvim_win_get_cursor(0)[1]
     local c = session.state.comments[row]
     if not c then return end
-    vim.cmd("wincmd p")
-    diffview.focus_anchor(c.file, c.side, c.start_line)
+    view.focus_anchor(c.file, c.side, c.start_line)
   end, { buffer = qf_buf, nowait = true, silent = true })
 end
 

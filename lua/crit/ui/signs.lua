@@ -1,9 +1,9 @@
--- signs.lua paints draft comments onto Diffview buffers as gutter signs and
--- end-of-line virtual text.
+-- signs.lua paints draft comments onto the inline diff buffers as gutter signs
+-- and end-of-line virtual text.
 
 local config = require("crit.config")
 local session = require("crit.session")
-local diffview = require("crit.diffview")
+local view = require("crit.view")
 
 local M = {}
 
@@ -33,31 +33,33 @@ function M.clear()
   end
 end
 
--- paint walks every loaded buffer, asks Diffview which (file, side) it
--- represents, and places signs + virt_text for every matching comment.
+-- paint walks every crit diff buffer and places signs + virt_text for every
+-- comment anchored to the file it shows. A stored comment anchor is a
+-- (side, line) pair; the view maps that to the buffer's display rows.
 function M.paint()
   define_signs()
   M.clear()
   if not session.is_attached() then return end
 
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(buf) then
-      local file, side = diffview.buffer_anchor(buf)
-      if file and side then
-        local comments = session.comments_for(file, side)
-        for _, c in ipairs(comments) do
-          M.paint_one(buf, c)
-        end
+  for _, buf in ipairs(view.list_bufs()) do
+    local path = view.buf_path(buf)
+    if path then
+      for _, c in ipairs(session.comments_for(path, nil)) do
+        M.paint_one(buf, c)
       end
     end
   end
 end
 
--- paint_one places sign + virt_text for a single comment in buf.
+-- paint_one places sign + virt_text for a single comment in buf, translating
+-- its (side, start..end) anchor into the buffer's display rows.
 function M.paint_one(buf, c)
+  local r1, r2 = view.render_range(buf, c.side, c.start_line, c.end_line)
+  if not r1 then return end
+
   local kind_spec = config.opts.signs[c.kind] or config.opts.signs.comment
   local sign_name = SIGN_PREFIX .. (config.opts.signs[c.kind] and c.kind or "comment")
-  for lnum = c.start_line, c.end_line do
+  for lnum = r1, r2 do
     vim.fn.sign_place(0, config.opts.sign_group, sign_name, buf, {
       lnum = lnum,
       priority = 10,
@@ -70,7 +72,7 @@ function M.paint_one(buf, c)
       first_line = first_line:sub(1, config.opts.virt_text.max_chars - 1) .. "…"
     end
     local virt = config.opts.virt_text.prefix .. first_line
-    pcall(vim.api.nvim_buf_set_extmark, buf, NS, c.end_line - 1, 0, {
+    pcall(vim.api.nvim_buf_set_extmark, buf, NS, r2 - 1, 0, {
       virt_text = { { virt, config.opts.virt_text.hl } },
       virt_text_pos = "eol",
       hl_mode = "combine",
